@@ -4389,7 +4389,7 @@ class GeminiAnalyzer:
         if "```" in text:
             raise ValueError("ambiguous_json")
 
-     try:
+        try:
             data = self._load_analysis_json_candidate(stripped)
             return stripped, data
         except json.JSONDecodeError as exc:
