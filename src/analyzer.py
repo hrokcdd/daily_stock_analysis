@@ -4389,25 +4389,25 @@ class GeminiAnalyzer:
         if "```" in text:
             raise ValueError("ambiguous_json")
 
-        try:
-    data = self._load_analysis_json_candidate(stripped)
-    return stripped, data
-except json.JSONDecodeError as exc:
-    if self._contains_embedded_json_object(text):
-        # 有嵌入式JSON但整体不是有效JSON → 尝试提取第一个JSON对象
-        decoder = json.JSONDecoder()
-        for idx, ch in enumerate(text):
-            if ch != "{":
-                continue
-            try:
-                obj, end = decoder.raw_decode(text[idx:])
-                json_str = text[idx:idx + end]
-                data = self._load_analysis_json_candidate(json_str)
-                return json_str, data
-            except json.JSONDecodeError:
-                continue
-        raise ValueError("ambiguous_json") from exc
-    raise
+     try:
+            data = self._load_analysis_json_candidate(stripped)
+            return stripped, data
+        except json.JSONDecodeError as exc:
+            if self._contains_embedded_json_object(text):
+                # 有嵌入式JSON但整体不是有效JSON -> 尝试提取第一个JSON对象
+                decoder = json.JSONDecoder()
+                for idx, ch in enumerate(text):
+                    if ch != "{":
+                        continue
+                    try:
+                        obj, end = decoder.raw_decode(text[idx:])
+                        json_str = text[idx:idx + end]
+                        data = self._load_analysis_json_candidate(json_str)
+                        return json_str, data
+                    except json.JSONDecodeError:
+                        continue
+                raise ValueError("ambiguous_json") from exc
+            raise
 
     def _load_analysis_json_candidate(self, json_str: str) -> Dict[str, Any]:
         """Parse one already-selected JSON candidate, repairing common LLM JSON drift."""
