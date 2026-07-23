@@ -15,6 +15,62 @@ import logging
 import re
 import threading
 import time
+# ============================================================
+# 东方财富新闻搜索 Provider（国内，无需API key）
+# 用于 SearXNG 失败时的兜底
+# ============================================================
+import requests as _requests_ef  # 已有 requests 可去掉这行
+
+class EastMoneyNewsProvider:
+    """东方财富公告搜索（国内，无需key）"""
+
+    NAME = "eastmoney"
+    ENDPOINT = "https://np-anotice-stock.eastmoney.com/api/security/ann"
+
+    def __init__(self, timeout: int = 10):
+        self.timeout = timeout
+        self._available = True
+
+    @property
+    def is_available(self) -> bool:
+        return self._available
+
+    def search(self, query: str, limit: int = 10) -> list:
+        """搜索股票公告/新闻
+
+        Args:
+            query: 股票代码或名称（暂时简化，搜全市场最新）
+            limit: 返回条数
+        """
+        try:
+            resp = _requests_ef.get(
+                self.ENDPOINT,
+                params={
+                    "sr": -1,
+                    "page_size": limit,
+                    "page_index": 1,
+                },
+                timeout=self.timeout,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            items = data.get("data", {}).get("list", [])
+            return [
+                {
+                    "title": item.get("title", ""),
+                    "url": f"https://data.eastmoney.com/notices/detail/{item.get('stockcode','')}/{item.get('art_code','')}.html",
+                    "summary": f"代码: {item.get('stockcode','')}  名称: {item.get('short_name','')}",
+                    "source": "eastmoney",
+                }
+                for item in items
+                if item.get("title")
+            ]
+        except Exception as e:
+            logger.warning(f"[EastMoney] 搜索失败: {e}")
+            self._available = False
+            return []
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
