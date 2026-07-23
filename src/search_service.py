@@ -19,88 +19,94 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
-from typing import (Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union)
-import itertools
-from urllib.parse import urlparse, unquote
-from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_exponential, before_sleep_log
-import feedparser
+from typing import List, Dict, Any, Optional, Tuple
+from itertools import cycle
+from urllib.parse import parse_qsl, unquote, urlparse
+import requests
+from newspaper import Article, Config
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
+
 from data_provider.us_index_mapping import is_us_index_code
 from src.config import (
     NEWS_STRATEGY_WINDOWS,
     normalize_news_strategy_profile,
     resolve_news_window_days,
 )
-from src.services.run_diagnostics import record_provider_run, record_provider_run_started
-
-# ============================================================
-# 新浪财经新闻搜索 Provider（免费，无需API Key）
-# ============================================================
-class SinaFinanceNewsProvider:
-    """新浪财经新闻搜索（免费，无需API Key）"""
-
-    name = "sina_finance"
-
-    def __init__(self, timeout: int = 10):
-        self.timeout = timeout
-        self._available = True
-
-    @property
-    def is_available(self) -> bool:
-        return self._available
-
-    def search(self, query: str, max_results: int = 10, **kwargs) -> 'SearchResponse':
-        """搜索新浪财经新闻"""
-        results = []
-        try:
-            resp = requests.get(
-                "https://feed.mix.sina.com.cn/api/roll/get",
-                params={
-                    "pageid": 153,
-                    "lid": 2516,
-                    "num": max_results,
-                    "versionNumber": 1.2,
-                    "page": 1,
-                    "encode": "utf-8",
-                },
-                timeout=self.timeout,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Referer": "https://finance.sina.com.cn/",
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-            for item in data.get("result", {}).get("data", []):
-                title = item.get("title", "")
-                if title:
-                    results.append(SearchResult(
-                        title=title,
-                        snippet=item.get("intro", ""),
-                        url=item.get("url", ""),
-                        source="sina_finance",
-                        published_date=item.get("ctime", ""),
-                    ))
-
-            return SearchResponse(
-                query=query,
-                results=results,
-                provider=self.name,
-                success=True,
-            )
-        except Exception as e:
-            logger.warning(f"[SinaFinance] 搜索失败: {e}")
-            self._available = False
-            return SearchResponse(
-                query=query, results=[], provider=self.name,
-                success=False, error_message=str(e),
-            )
-
-import requests
+from src.services.run_diagnostics import record_provider_run
 
 logger = logging.getLogger(__name__)
 
+# Transient network errors (retryable)
+_SEARCH_TRANSIENT_EXCEPTIONS = (
+    requests.exceptions.SSLError,
+    requests.exceptions.ConnectionError,
+    requests.exceptions.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+)
 
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type(_SEARCH_TRANSIENT_EXCEPTIONS),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+)
+def _post_with_retry(url: str, *, headers: Dict[str, str], json: Dict[str, Any], timeout: int) -> requests.Response:
+    """POST with retry on transient SSL/network errors."""
+    return requests.post(url, headers=headers, json=json, timeout=timeout)
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type(_SEARCH_TRANSIENT_EXCEPTIONS),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
+def _get_with_retry(
+    url: str, *, headers: Dict[str, str], params: Dict[str, Any], timeout: int
+) -> requests.Response:
+    """GET with retry on transient SSL/network errors."""
+    return requests.get(url, headers=headers, params=params, timeout=timeout)
+
+
+def fetch_url_content(url: str, timeout: int = 5) -> str:
+    """
+    获取 URL 网页正文内容 (使用 newspaper3k)
+    """
+    try:
+        # 配置 newspaper3k
+        config = Config()
+        config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        config.request_timeout = timeout
+        config.fetch_images = False  # 不下载图片
+        config.memoize_articles = False # 不缓存
+
+        article = Article(url, config=config, language='zh') # 默认中文，但也支持其他
+        article.download()
+        article.parse()
+
+        # 获取正文
+        text = article.text.strip()
+
+        # 简单的后处理，去除空行
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        text = '\n'.join(lines)
+
+        return text[:1500]  # 限制返回长度（比 bs4 稍微多一点，因为 newspaper 解析更干净）
+    except Exception as e:
+        logger.debug(f"Fetch content failed for {url}: {e}")
+
+    return ""
+
+
+@dataclass
 class SearchResult:
     """搜索结果数据类"""
     title: str
@@ -263,7 +269,7 @@ class BaseSearchProvider(ABC):
                 search_time=elapsed
             )
 
-    def search(self, query: str, max_results: int = 10, **kwargs) -> SearchResponse:
+    def search(self, query: str, max_results: int = 5, days: int = 7) -> SearchResponse:
         """
         执行搜索
         
@@ -1079,7 +1085,7 @@ class AnspireSearchProvider(BaseSearchProvider):
     def __init__(self, api_keys: List[str]):
         super().__init__(api_keys, "Anspire")
     
-    def _do_search(self, query: str, api_key: str, max_results: int, days: int = 7, region_mode: int = 0) -> SearchResponse:
+    def _do_search(self, query: str, api_key: str, max_results: int, days: int = 7) -> SearchResponse:
         """执行 Anspire 搜索"""
         try:
             import requests
@@ -1106,8 +1112,7 @@ class AnspireSearchProvider(BaseSearchProvider):
                 "query": query,
                 "top_k": min(max_results,50), 
                 "FromTime": (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S"),
-                "ToTime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "region_mode": region_mode
+                "ToTime": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             
             # 执行搜索
@@ -2337,14 +2342,7 @@ class SearchService:
         if anspire_keys:
             self._providers.insert(0, AnspireSearchProvider(anspire_keys))
             logger.info(f"已配置 Anspire Search 搜索，共 {len(anspire_keys)} 个 API Key")
-        
-        # 8. 新浪财经新闻搜索（免费，无需API key）
-        try:
-            self._providers.append(SinaFinanceNewsProvider())
-            logger.info("已配置新浪财经新闻搜索")
-        except Exception as e:
-            logger.warning(f"新浪财经新闻搜索初始化失败: {e}")
-        
+            
         if not self._providers:
             logger.warning("未配置任何搜索能力，新闻搜索功能将不可用")
 
@@ -3706,11 +3704,6 @@ class SearchService:
 
                 started_at = time.monotonic()
                 try:
-                    record_provider_run_started(
-                        data_type="news_search",
-                        provider=provider.name,
-                        operation="search_stock_news",
-                    )
                     response = provider.search(query, provider_max_results, days=search_days, **search_kwargs)
                 except Exception as exc:
                     self._record_news_search_run(
