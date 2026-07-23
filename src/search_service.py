@@ -21,7 +21,7 @@ from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import (Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union)
 import itertools
-import urllib.parse
+from urllib.parse import urlparse
 from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_exponential, before_sleep_log
 import feedparser
 from data_provider.us_index_mapping import is_us_index_code
