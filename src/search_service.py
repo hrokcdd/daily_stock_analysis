@@ -35,7 +35,7 @@ class EastMoneyNewsProvider:
     def is_available(self) -> bool:
         return self._available
 
-    def search(self, query: str, max_results: int = 10) -> 'SearchResponse':
+    def search(self, query: str, max_results: int = 10,**kwargs) -> 'SearchResponse':
         """搜索股票公告/新闻"""
         try:
             resp = _requests_ef.get(
