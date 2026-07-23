@@ -35,7 +35,7 @@ class EastMoneyNewsProvider:
     def is_available(self) -> bool:
         return self._available
 
-    def search(self, query: str, limit: int = 10) -> list:
+    def search(self, query: str, max_results: int = 10,**kwargs) -> list:
         """搜索股票公告/新闻
 
         Args:
@@ -47,7 +47,7 @@ class EastMoneyNewsProvider:
                 self.ENDPOINT,
                 params={
                     "sr": -1,
-                    "page_size": limit,
+                    "page_size": max_results,
                     "page_index": 1,
                 },
                 timeout=self.timeout,
