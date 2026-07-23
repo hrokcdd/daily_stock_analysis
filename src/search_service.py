@@ -333,7 +333,7 @@ class BaseSearchProvider(ABC):
                 search_time=elapsed
             )
 
-    def search(self, query: str, max_results: int = 5, days: int = 7) -> SearchResponse:
+    def search(self, query: str, max_results: int = 10, **kwargs) -> SearchResponse:
         """
         执行搜索
         
