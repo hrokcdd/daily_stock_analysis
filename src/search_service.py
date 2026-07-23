@@ -15,12 +15,18 @@ import logging
 import re
 import threading
 import time
-# ============================================================
-# 东方财富新闻搜索 Provider（国内，无需API key）
-# 用于 SearXNG 失败时的兜底
-# ============================================================
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
+from typing import (Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union)
+import itertools
+import urllib.parse
+from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_exponential
+import feedparser
+from data_provider.us_index_mapping import is_us_index_code
+from src.config import NEWS_STRATEGY_WINDOWS, NEWS_MAX_AGE_DAYS
 import requests
-
 class SinaFinanceNewsProvider:
     """新浪财经新闻搜索（免费，无需API Key）"""
 
