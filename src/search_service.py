@@ -21,11 +21,10 @@ import time
 # ============================================================
 import requests as _requests_ef  # 已有 requests 可去掉这行
 
-class EastMoneyNewsProvider:
-    """东方财富公告搜索（国内，无需key）"""
+class SinaFinanceNewsProvider:
+    """新浪财经新闻搜索（免费，无需API Key）"""
 
-    name = "eastmoney"
-    ENDPOINT = "https://np-anotice-stock.eastmoney.com/api/security/ann"
+    name = "sina_finance"
 
     def __init__(self, timeout: int = 10):
         self.timeout = timeout
@@ -35,31 +34,38 @@ class EastMoneyNewsProvider:
     def is_available(self) -> bool:
         return self._available
 
-    def search(self, query: str, max_results: int = 10,**kwargs) -> 'SearchResponse':
-        """搜索股票公告/新闻"""
+    def search(self, query: str, max_results: int = 10, **kwargs) -> 'SearchResponse':
+        """搜索新浪财经新闻"""
+        results = []
         try:
             resp = _requests_ef.get(
-                self.ENDPOINT,
+                "https://feed.mix.sina.com.cn/api/roll/get",
                 params={
-                    "sr": -1,
-                    "page_size": max_results,
-                    "page_index": 1,
+                    "pageid": 153,
+                    "lid": 2516,
+                    "num": max_results,
+                    "versionNumber": 1.2,
+                    "page": 1,
+                    "encode": "utf-8",
                 },
                 timeout=self.timeout,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Referer": "https://finance.sina.com.cn/",
+                },
             )
             resp.raise_for_status()
             data = resp.json()
 
-            items = data.get("data", {}).get("list", [])
-            results = []
-            for item in items:
-                if item.get("title"):
+            for item in data.get("result", {}).get("data", []):
+                title = item.get("title", "")
+                if title:
                     results.append(SearchResult(
-                        title=item.get("title", ""),
-                        snippet=f"代码: {item.get('stockcode','')}  名称: {item.get('short_name','')}",
-                        url=f"https://data.eastmoney.com/notices/detail/{item.get('stockcode','')}/{item.get('art_code','')}.html",
-                        source="eastmoney",
+                        title=title,
+                        snippet=item.get("intro", ""),
+                        url=item.get("url", ""),
+                        source="sina_finance",
+                        published_date=item.get("ctime", ""),
                     ))
 
             return SearchResponse(
@@ -68,33 +74,13 @@ class EastMoneyNewsProvider:
                 provider=self.name,
                 success=True,
             )
-
         except Exception as e:
-            logger.warning(f"[EastMoney] 搜索失败: {e}")
+            logger.warning(f"[SinaFinance] 搜索失败: {e}")
             self._available = False
             return SearchResponse(
-                query=query,
-                results=[],
-                provider=self.name,
-                success=False,
-                error_message=str(e),
+                query=query, results=[], provider=self.name,
+                success=False, error_message=str(e),
             )
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-from email.utils import parsedate_to_datetime
-from typing import List, Dict, Any, Optional, Tuple
-from itertools import cycle
-from urllib.parse import parse_qsl, unquote, urlparse
-import requests
-from newspaper import Article, Config
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-    before_sleep_log,
-)
 
 from data_provider.us_index_mapping import is_us_index_code
 from src.config import (
@@ -2407,13 +2393,13 @@ class SearchService:
         if anspire_keys:
             self._providers.insert(0, AnspireSearchProvider(anspire_keys))
             logger.info(f"已配置 Anspire Search 搜索，共 {len(anspire_keys)} 个 API Key")
-
-        # 8. 东方财富公告搜索（无需API key，SearXNG 失败时兜底）
+        
+        # 8. 新浪财经新闻搜索（免费，无需API key）
         try:
-            self._providers.append(EastMoneyNewsProvider())
-            logger.info("已配置东方财富公告搜索（SearXNG 失败时兜底）")
+            self._providers.append(SinaFinanceNewsProvider())
+            logger.info("已配置新浪财经新闻搜索")
         except Exception as e:
-            logger.warning(f"东方财富公告搜索初始化失败: {e}")
+            logger.warning(f"新浪财经新闻搜索初始化失败: {e}")
         
         if not self._providers:
             logger.warning("未配置任何搜索能力，新闻搜索功能将不可用")
