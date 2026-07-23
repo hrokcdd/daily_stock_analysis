@@ -19,7 +19,7 @@ import time
 # 东方财富新闻搜索 Provider（国内，无需API key）
 # 用于 SearXNG 失败时的兜底
 # ============================================================
-import requests as _requests_ef  # 已有 requests 可去掉这行
+import requests
 
 class SinaFinanceNewsProvider:
     """新浪财经新闻搜索（免费，无需API Key）"""
@@ -38,7 +38,7 @@ class SinaFinanceNewsProvider:
         """搜索新浪财经新闻"""
         results = []
         try:
-            resp = _requests_ef.get(
+            resp = requests.get(
                 "https://feed.mix.sina.com.cn/api/roll/get",
                 params={
                     "pageid": 153,
