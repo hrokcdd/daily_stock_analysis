@@ -35,13 +35,8 @@ class EastMoneyNewsProvider:
     def is_available(self) -> bool:
         return self._available
 
-    def search(self, query: str, max_results: int = 10,**kwargs) -> list:
-        """搜索股票公告/新闻
-
-        Args:
-            query: 股票代码或名称（暂时简化，搜全市场最新）
-            limit: 返回条数
-        """
+    def search(self, query: str, max_results: int = 10) -> 'SearchResponse':
+        """搜索股票公告/新闻"""
         try:
             resp = _requests_ef.get(
                 self.ENDPOINT,
@@ -57,20 +52,33 @@ class EastMoneyNewsProvider:
             data = resp.json()
 
             items = data.get("data", {}).get("list", [])
-            return [
-                {
-                    "title": item.get("title", ""),
-                    "url": f"https://data.eastmoney.com/notices/detail/{item.get('stockcode','')}/{item.get('art_code','')}.html",
-                    "summary": f"代码: {item.get('stockcode','')}  名称: {item.get('short_name','')}",
-                    "source": "eastmoney",
-                }
-                for item in items
-                if item.get("title")
-            ]
+            results = []
+            for item in items:
+                if item.get("title"):
+                    results.append(SearchResult(
+                        title=item.get("title", ""),
+                        snippet=f"代码: {item.get('stockcode','')}  名称: {item.get('short_name','')}",
+                        url=f"https://data.eastmoney.com/notices/detail/{item.get('stockcode','')}/{item.get('art_code','')}.html",
+                        source="eastmoney",
+                    ))
+
+            return SearchResponse(
+                query=query,
+                results=results,
+                provider=self.name,
+                success=True,
+            )
+
         except Exception as e:
             logger.warning(f"[EastMoney] 搜索失败: {e}")
             self._available = False
-            return []
+            return SearchResponse(
+                query=query,
+                results=[],
+                provider=self.name,
+                success=False,
+                error_message=str(e),
+            )
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
