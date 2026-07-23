@@ -2399,7 +2399,14 @@ class SearchService:
         if anspire_keys:
             self._providers.insert(0, AnspireSearchProvider(anspire_keys))
             logger.info(f"已配置 Anspire Search 搜索，共 {len(anspire_keys)} 个 API Key")
-            
+
+        # 8. 东方财富公告搜索（无需API key，SearXNG 失败时兜底）
+        try:
+            self._providers.append(EastMoneyNewsProvider())
+            logger.info("已配置东方财富公告搜索（SearXNG 失败时兜底）")
+        except Exception as e:
+            logger.warning(f"东方财富公告搜索初始化失败: {e}")
+        
         if not self._providers:
             logger.warning("未配置任何搜索能力，新闻搜索功能将不可用")
 
