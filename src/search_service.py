@@ -97,6 +97,10 @@ class SinaFinanceNewsProvider:
             )
 
 import requests
+
+logger = logging.getLogger(__name__)
+
+
 class SearchResult:
     """搜索结果数据类"""
     title: str
