@@ -24,7 +24,7 @@ import requests as _requests_ef  # 已有 requests 可去掉这行
 class EastMoneyNewsProvider:
     """东方财富公告搜索（国内，无需key）"""
 
-    NAME = "eastmoney"
+    name = "eastmoney"
     ENDPOINT = "https://np-anotice-stock.eastmoney.com/api/security/ann"
 
     def __init__(self, timeout: int = 10):
