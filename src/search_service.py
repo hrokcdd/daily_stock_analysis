@@ -22,13 +22,21 @@ from email.utils import parsedate_to_datetime
 from typing import (Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union)
 import itertools
 import urllib.parse
-from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_exponential
+from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_exponential, before_sleep_log
 import feedparser
 from data_provider.us_index_mapping import is_us_index_code
-from src.config import NEWS_STRATEGY_WINDOWS, NEWS_MAX_AGE_DAYS
+from src.config import (
+    NEWS_STRATEGY_WINDOWS,
+    normalize_news_strategy_profile,
+    resolve_news_window_days,
+)
+from src.services.run_diagnostics import record_provider_run, record_provider_run_started
 import requests
+
+# ============================================================
+# 新浪财经新闻搜索 Provider（免费，无需API Key）
+# ============================================================
 class SinaFinanceNewsProvider:
-    """新浪财经新闻搜索（免费，无需API Key）"""
 
     name = "sina_finance"
 
